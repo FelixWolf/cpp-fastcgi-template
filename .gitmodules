@@ -1,0 +1,3 @@
+[submodule "src/cgi"]
+	path = src/cgi
+	url = https://github.com/FelixWolf/cgi.git

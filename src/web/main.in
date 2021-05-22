@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+REAL_PATH=$(dirname "$(readlink -f "$0")")
+
+#CONFIGURATION
+#FCGI Binary
+BINARY=${REAL_PATH}/@BINARY_NAME@
+
+#Arguments to pass to the application
+#FCGI_ARGUMENTS=
+
+#PID file
+PID_FILE=${REAL_PATH}/@BINARY_NAME@.pid
+
+#Bind to IPv4/IPv6 address
+#BIND_ADDR=0.0.0.0
+#BIND_PORT=9000
+
+#Bind to Unix domain socket
+BIND_UNIX=${REAL_PATH}/@BINARY_NAME@.fcgi
+
+#Change Unix domain socket owner
+#UNIX_USER=
+#UNIX_GROUP=
+
+#Change Unix domain socket mode (octal integer, default: allow
+# read+write for user and group as far as umask allows it)
+#UNIX_MODE=770
+
+#Chroot to this directory
+#DIRECTORY=
+
+#Number of children to fork (default 1)
+#CHILDREN=1
+
+#Backlog to allow on the socket
+#BACKLOG=1024
+
+#Change the process owner
+#CHUSER=
+#CHGROUP=
+
+
+# SERVICE CODE
+
+RETVAL=0
+start(){
+    echo -n "Starting FastCGI application: "
+    arg=()
+    #IPv4/IPv6 binding
+    if [[ -n "${BIND_PORT}" ]]; then
+        if [[ -n "${BIND_ADDR}" ]]; then
+            args+=("-a" "${BIND_ADDR}")
+        fi
+        args+=("-p" "${BIND_PORT}")
+    fi
+    
+    #Unix socket binding
+    if [[ -n "${BIND_UNIX}" ]]; then
+        args+=("-s" "${BIND_UNIX}")
+        if [[ -n "${UNIX_USER}" ]]; then
+            args+=("-U" "${UNIX_USER}")
+        fi
+        if [[ -n "${UNIX_GROUP}" ]]; then
+            args+=("-G" "${UNIX_GROUP}")
+        fi
+        if [[ -n "${UNIX_MODE}" ]]; then
+            args+=("-M" "${UNIX_MODE}")
+        fi
+    fi
+    
+    #Throw error if failed to start
+    if [ -z ${args+x} ]; then
+        echo "Failed!"
+        echo "Error: No bindings set!"
+        return 1
+    fi
+    
+    #Get the rest of the optional values
+    if [[ -n "${DIRECTORY}" ]]; then
+        args+=("-c" "${DIRECTORY}")
+    else
+        args+=("-c" "${REAL_PATH}")
+    fi
+    if [[ -n "${CHILDREN}" ]]; then
+        args+=("-F" "${CHILDREN}")
+    fi
+    if [[ -n "${BACKLOG}" ]]; then
+        args+=("-b" "${BACKLOG}")
+    fi
+    if [[ -n "${CHUSER}" ]]; then
+        args+=("-u" "${CHUSER}")
+    fi
+    if [[ -n "${CHGROUP}" ]]; then
+        args+=("-g" "${CHGROUP}")
+    fi
+    
+    args+=("-P" "${PID_FILE}")
+    
+    #Start it
+    msg=$(spawn-fcgi "${args[@@]}" -- $BINARY $FCGI_ARGUMENTS 2>&1 1>&2)
+    retval=$?
+    if [[ retval -eq 0 ]]; then
+        echo "Started."
+    else
+        echo "Failed!"
+        echo $msg
+    fi;
+    return 0
+}
+
+stop(){
+    echo -n "Stopping FastCGI application: "
+    if [[ -r $PID_FILE ]]; then
+        pid=$(cat $PID_FILE)
+        retval=0
+        if [[ $(readlink -f "/proc/${pid}/exe") == $BINARY ]]; then
+            kill $pid
+            retval=$?
+            if [[ $retval -ne 0 ]]; then
+                echo "Failed!"
+            fi;
+            echo "Stopped."
+        else
+            echo "Not running."
+        fi;
+        rm $PID_FILE
+        return $retval
+    else
+        echo "Not running."
+    fi
+    return 0
+}
+
+case "$1" in
+    start)
+        start
+        exit $?
+  ;;
+    stop)
+        stop
+        exit $?
+  ;;
+    restart)
+        stop
+        start
+        exit $?
+  ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+  ;;
+esac
